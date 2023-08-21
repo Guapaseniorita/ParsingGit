@@ -1,0 +1,33 @@
+<!DOCTYPE>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title>Веб-приложение парсинга YouTube каналов</title>
+</head>
+<body>
+<h1>Веб-приложение парсинга YouTube каналов</h1>
+
+<form id="parseForm" th:action="@{/parse}" th:method="get">
+  <button type="submit">Запустить парсинг</button>
+</form>
+
+<div id="result"></div>
+
+<script>
+  document.getElementById("parseForm").addEventListener("submit", function (event) {
+    event.preventDefault(); // Предотвращение отправки формы по умолчанию
+
+    // Создание AJAX-запроса
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/parse"); // URL, который соответствует вашему маршруту парсинга
+    xhr.onload = function () {
+      if (xhr.status === 200) {
+        document.getElementById("result").innerHTML = xhr.responseText;
+      } else {
+        document.getElementById("result").innerHTML = "Ошибка при выполнении парсинга";
+      }
+    };
+    xhr.send();
+  });
+</script>
+</body>
+</html>
