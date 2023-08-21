@@ -19,6 +19,9 @@ import com.google.gson.JsonParser;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 @Controller
 public class ParserController {
     @GetMapping("/")
@@ -26,6 +29,7 @@ public class ParserController {
         model.addAttribute("title", "Веб-приложение парсинга YouTube каналов");
         return "parse"; // Возвращает имя HTML-файла без расширения
     }
+
     @GetMapping("/parse")
     public String parseChannels() {
         try {
@@ -37,18 +41,22 @@ public class ParserController {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             String responseBody = response.body();
 
+            // Парсинг JSON-ответа
             JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
             JsonArray items = json.getAsJsonArray("items");
 
-            String currentDirectory = System.getProperty("user.dir"); // Получить текущую рабочую директорию проекта
+            // Получение текущей рабочей директории
+            String currentDirectory = System.getProperty("user.dir");
             String filePath = currentDirectory + "/src/main/java/com/example/parsing/result/";
 
+            // Создание файлов Excel для хранения данных
             File fileNoEmail = new File(filePath + "noemail.xls");
             File fileWithEmail = new File(filePath + "email.xls");
 
             Workbook workbookNoEmail;
             Workbook workbookWithEmail;
 
+            // Проверка существования файлов и создание новых, если необходимо
             if (fileNoEmail.exists()) {
                 workbookNoEmail = WorkbookFactory.create(fileNoEmail);
             } else {
@@ -75,55 +83,64 @@ public class ParserController {
             Sheet sheetNoEmail = workbookNoEmail.getSheet("Sheet1");
             Sheet sheetWithEmail = workbookWithEmail.getSheet("Sheet1");
 
-            // Переменные для отслеживания текущей строки в файле
+            // Определение текущей строки в файлах
             int currentRowNoEmail = sheetNoEmail.getLastRowNum() + 1;
             int currentRowWithEmail = sheetWithEmail.getLastRowNum() + 1;
 
+            // Обработка информации о каналах
             for (JsonElement item : items) {
                 JsonObject channel = item.getAsJsonObject();
                 JsonObject snippet = channel.getAsJsonObject("snippet");
                 JsonElement channelIdElement = snippet.get("channelId");
                 String channelId = channelIdElement != null ? channelIdElement.getAsString() : null;
 
-                // Запрос на получение информации о канале
                 if (channelId != null) {
+                    // Запрос на получение информации о канале
                     HttpRequest channelRequest = HttpRequest.newBuilder()
-                            .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet%2Cstatistics%2Cemail&id=" + channelId + "&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
+                            .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet%2Cstatistics&id=" + channelId + "&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
                             .build();
 
                     HttpResponse<String> channelResponse = client.send(channelRequest, HttpResponse.BodyHandlers.ofString());
                     String channelResponseBody = channelResponse.body();
 
+                    // Парсинг JSON-ответа о канале
                     JsonObject channelJson = JsonParser.parseString(channelResponseBody).getAsJsonObject();
                     JsonArray channelItems = channelJson.getAsJsonArray("items");
 
-                    // Обработка информации о канале и сохранение данных в файл
+                    // Обработка информации о канале и заполнение данных
                     if (channelItems != null && channelItems.size() > 0) {
                         JsonObject channelItem = channelItems.get(0).getAsJsonObject();
                         JsonObject channelStatistics = channelItem.getAsJsonObject("statistics");
                         JsonObject channelSnippet = channelItem.getAsJsonObject("snippet");
-                        JsonElement emailElement = channelSnippet.get("email");
+                        JsonElement descriptionElement = channelSnippet.get("description");
 
-                        // Получение необходимых данных о канале
                         String subscriberCount = channelStatistics.get("subscriberCount").getAsString();
                         String email = "";
-                        if (emailElement != null) {
-                            email = emailElement.getAsString();
+                        if (descriptionElement != null) {
+                            String description = descriptionElement.getAsString();
+
+                            // Использование регулярного выражения для поиска электронной почты в описании
+                            Pattern pattern = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}");
+                            Matcher matcher = pattern.matcher(description);
+                            if (matcher.find()) {
+                                email = matcher.group();
+                            }
                         }
 
                         // Создание новых строк и заполнение данными
                         Row newRowNoEmail = sheetNoEmail.createRow(currentRowNoEmail);
                         newRowNoEmail.createCell(0).setCellValue("https://www.youtube.com/channel/" + channelId);
                         newRowNoEmail.createCell(1).setCellValue(subscriberCount);
-
-                        Row newRowWithEmail = sheetWithEmail.createRow(currentRowWithEmail);
-                        newRowWithEmail.createCell(0).setCellValue("https://www.youtube.com/channel/" + channelId);
-                        newRowWithEmail.createCell(1).setCellValue(email);
-                        newRowWithEmail.createCell(2).setCellValue(subscriberCount);
-
-                        // Увеличение индекса текущей строки
                         currentRowNoEmail++;
-                        currentRowWithEmail++;
+
+                        if (!email.isEmpty() ) {
+                            Row newRowWithEmail = sheetWithEmail.createRow(currentRowWithEmail);
+                            newRowWithEmail.createCell(0).setCellValue("https://www.youtube.com/channel/" + channelId);
+                            newRowWithEmail.createCell(1).setCellValue(email);
+                            newRowWithEmail.createCell(2).setCellValue(subscriberCount);
+                            currentRowWithEmail++;
+                        }
+
                     } else {
                         System.out.println("Ошибка при получении информации о канале: " + channelId);
                     }
@@ -132,19 +149,19 @@ public class ParserController {
                 }
             }
 
-            // Сохранение данных в файлы
-            FileOutputStream fileOutputStreamNoEmail = new FileOutputStream(fileNoEmail);
-            workbookNoEmail.write(fileOutputStreamNoEmail);
-            fileOutputStreamNoEmail.close();
+                // Сохранение данных в файлы
+                FileOutputStream fileOutputStreamNoEmail = new FileOutputStream(fileNoEmail);
+                workbookNoEmail.write(fileOutputStreamNoEmail);
+                fileOutputStreamNoEmail.close();
 
-            FileOutputStream fileOutputStreamWithEmail = new FileOutputStream(fileWithEmail);
-            workbookWithEmail.write(fileOutputStreamWithEmail);
-            fileOutputStreamWithEmail.close();
+                FileOutputStream fileOutputStreamWithEmail = new FileOutputStream(fileWithEmail);
+                workbookWithEmail.write(fileOutputStreamWithEmail);
+                fileOutputStreamWithEmail.close();
 
-            return "parse";
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-            return "error";
+                return "parse";
+            } catch(IOException | InterruptedException e ){
+                e.printStackTrace();
+                return "error";
+            }
         }
     }
-}
