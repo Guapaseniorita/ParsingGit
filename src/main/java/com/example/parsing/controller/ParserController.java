@@ -7,6 +7,9 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +30,7 @@ public class ParserController {
     @GetMapping("/")
     public String parse(Model model) {
         model.addAttribute("title", "Веб-приложение парсинга YouTube каналов");
-        return "parse"; // Возвращает имя HTML-файла без расширения
+        return "parse";
     }
 
     @GetMapping("/parse")
@@ -35,28 +38,24 @@ public class ParserController {
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=русскоязычные%20каналы&type=channel&regionCode=RU&relevanceLanguage=ru&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
+                    .uri(URI.create("https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10000&q=русскоязычные%20каналы&type=channel&regionCode=RU&relevanceLanguage=ru&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
                     .build();
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             String responseBody = response.body();
 
-            // Парсинг JSON-ответа
             JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
             JsonArray items = json.getAsJsonArray("items");
 
-            // Получение текущей рабочей директории
             String currentDirectory = System.getProperty("user.dir");
             String filePath = currentDirectory + "/src/main/java/com/example/parsing/result/";
 
-            // Создание файлов Excel для хранения данных
             File fileNoEmail = new File(filePath + "noemail.xls");
             File fileWithEmail = new File(filePath + "email.xls");
 
             Workbook workbookNoEmail;
             Workbook workbookWithEmail;
 
-            // Проверка существования файлов и создание новых, если необходимо
             if (fileNoEmail.exists()) {
                 workbookNoEmail = WorkbookFactory.create(fileNoEmail);
             } else {
@@ -83,11 +82,9 @@ public class ParserController {
             Sheet sheetNoEmail = workbookNoEmail.getSheet("Sheet1");
             Sheet sheetWithEmail = workbookWithEmail.getSheet("Sheet1");
 
-            // Определение текущей строки в файлах
             int currentRowNoEmail = sheetNoEmail.getLastRowNum() + 1;
             int currentRowWithEmail = sheetWithEmail.getLastRowNum() + 1;
 
-            // Обработка информации о каналах
             for (JsonElement item : items) {
                 JsonObject channel = item.getAsJsonObject();
                 JsonObject snippet = channel.getAsJsonObject("snippet");
@@ -95,7 +92,6 @@ public class ParserController {
                 String channelId = channelIdElement != null ? channelIdElement.getAsString() : null;
 
                 if (channelId != null) {
-                    // Запрос на получение информации о канале
                     HttpRequest channelRequest = HttpRequest.newBuilder()
                             .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet%2Cstatistics&id=" + channelId + "&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
                             .build();
@@ -103,31 +99,37 @@ public class ParserController {
                     HttpResponse<String> channelResponse = client.send(channelRequest, HttpResponse.BodyHandlers.ofString());
                     String channelResponseBody = channelResponse.body();
 
-                    // Парсинг JSON-ответа о канале
                     JsonObject channelJson = JsonParser.parseString(channelResponseBody).getAsJsonObject();
                     JsonArray channelItems = channelJson.getAsJsonArray("items");
 
-                    // Обработка информации о канале и заполнение данных
                     if (channelItems != null && channelItems.size() > 0) {
                         JsonObject channelItem = channelItems.get(0).getAsJsonObject();
                         JsonObject channelStatistics = channelItem.getAsJsonObject("statistics");
-                        JsonObject channelSnippet = channelItem.getAsJsonObject("snippet");
-                        JsonElement descriptionElement = channelSnippet.get("description");
+//                       JsonObject channelSnippet = channelItem.getAsJsonObject("snippet");
+//                       JsonElement descriptionElement = channelSnippet.get("description");
 
                         String subscriberCount = channelStatistics.get("subscriberCount").getAsString();
                         String email = "";
+                        // Использование Jsoup для веб-скрапинга страницы канала
+                        Document document = Jsoup.connect("https://www.youtube.com/channel/" + channelId + "/about").get();
+                        Element descriptionElement = document.select("div#description").first();
                         if (descriptionElement != null) {
-                            String description = descriptionElement.getAsString();
-
-                            // Использование регулярного выражения для поиска электронной почты в описании
+                            String description = descriptionElement.text();
                             Pattern pattern = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}");
                             Matcher matcher = pattern.matcher(description);
                             if (matcher.find()) {
                                 email = matcher.group();
                             }
                         }
-
-                        // Создание новых строк и заполнение данными
+//                        if (descriptionElement != null) {
+//                            String description = descriptionElement.getAsString();
+//
+//                            Pattern pattern = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}");
+//                            Matcher matcher = pattern.matcher(description);
+//                            if (matcher.find()) {
+//                                email = matcher.group();
+//                            }
+//                        }
                         Row newRowNoEmail = sheetNoEmail.createRow(currentRowNoEmail);
                         newRowNoEmail.createCell(0).setCellValue("https://www.youtube.com/channel/" + channelId);
                         newRowNoEmail.createCell(1).setCellValue(subscriberCount);
@@ -148,8 +150,6 @@ public class ParserController {
                     System.out.println("Ошибка при получении channelId канала");
                 }
             }
-
-                // Сохранение данных в файлы
                 FileOutputStream fileOutputStreamNoEmail = new FileOutputStream(fileNoEmail);
                 workbookNoEmail.write(fileOutputStreamNoEmail);
                 fileOutputStreamNoEmail.close();
