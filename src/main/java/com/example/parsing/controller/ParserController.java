@@ -105,31 +105,21 @@ public class ParserController {
                     if (channelItems != null && channelItems.size() > 0) {
                         JsonObject channelItem = channelItems.get(0).getAsJsonObject();
                         JsonObject channelStatistics = channelItem.getAsJsonObject("statistics");
-//                       JsonObject channelSnippet = channelItem.getAsJsonObject("snippet");
-//                       JsonElement descriptionElement = channelSnippet.get("description");
+                       JsonObject channelSnippet = channelItem.getAsJsonObject("snippet");
+                       JsonElement descriptionElement = channelSnippet.get("description");
 
                         String subscriberCount = channelStatistics.get("subscriberCount").getAsString();
                         String email = "";
-                        // Использование Jsoup для веб-скрапинга страницы канала
-                        Document document = Jsoup.connect("https://www.youtube.com/channel/" + channelId + "/about").get();
-                        Element descriptionElement = document.select("div#description").first();
+
                         if (descriptionElement != null) {
-                            String description = descriptionElement.text();
+                            String description = descriptionElement.getAsString();
+
                             Pattern pattern = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}");
                             Matcher matcher = pattern.matcher(description);
                             if (matcher.find()) {
                                 email = matcher.group();
                             }
                         }
-//                        if (descriptionElement != null) {
-//                            String description = descriptionElement.getAsString();
-//
-//                            Pattern pattern = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}");
-//                            Matcher matcher = pattern.matcher(description);
-//                            if (matcher.find()) {
-//                                email = matcher.group();
-//                            }
-//                        }
                         Row newRowNoEmail = sheetNoEmail.createRow(currentRowNoEmail);
                         newRowNoEmail.createCell(0).setCellValue("https://www.youtube.com/channel/" + channelId);
                         newRowNoEmail.createCell(1).setCellValue(subscriberCount);
