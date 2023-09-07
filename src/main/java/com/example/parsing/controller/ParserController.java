@@ -7,11 +7,9 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -19,14 +17,18 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.springframework.web.bind.annotation.RequestMapping;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@CrossOrigin(origins = "http://localhost:8080")
 @Controller
 public class ParserController {
+
     @GetMapping("/")
     public String parse(Model model) {
         model.addAttribute("title", "Веб-приложение парсинга YouTube каналов");
@@ -38,11 +40,11 @@ public class ParserController {
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10000&q=русскоязычные%20каналы&type=channel&regionCode=RU&relevanceLanguage=ru&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
+                    .uri(URI.create("https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1000&q=русскоязычные%20каналы&type=channel&regionCode=RU&relevanceLanguage=ru&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            String responseBody = response.body();
+            HttpResponse<String> responses = client.send(request, HttpResponse.BodyHandlers.ofString());
+            String responseBody = responses.body();
 
             JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
             JsonArray items = json.getAsJsonArray("items");
@@ -105,8 +107,8 @@ public class ParserController {
                     if (channelItems != null && channelItems.size() > 0) {
                         JsonObject channelItem = channelItems.get(0).getAsJsonObject();
                         JsonObject channelStatistics = channelItem.getAsJsonObject("statistics");
-                       JsonObject channelSnippet = channelItem.getAsJsonObject("snippet");
-                       JsonElement descriptionElement = channelSnippet.get("description");
+                        JsonObject channelSnippet = channelItem.getAsJsonObject("snippet");
+                        JsonElement descriptionElement = channelSnippet.get("description");
 
                         String subscriberCount = channelStatistics.get("subscriberCount").getAsString();
                         String email = "";
@@ -125,7 +127,7 @@ public class ParserController {
                         newRowNoEmail.createCell(1).setCellValue(subscriberCount);
                         currentRowNoEmail++;
 
-                        if (!email.isEmpty() ) {
+                        if (!email.isEmpty()) {
                             Row newRowWithEmail = sheetWithEmail.createRow(currentRowWithEmail);
                             newRowWithEmail.createCell(0).setCellValue("https://www.youtube.com/channel/" + channelId);
                             newRowWithEmail.createCell(1).setCellValue(email);
@@ -140,18 +142,27 @@ public class ParserController {
                     System.out.println("Ошибка при получении channelId канала");
                 }
             }
-                FileOutputStream fileOutputStreamNoEmail = new FileOutputStream(fileNoEmail);
-                workbookNoEmail.write(fileOutputStreamNoEmail);
-                fileOutputStreamNoEmail.close();
 
-                FileOutputStream fileOutputStreamWithEmail = new FileOutputStream(fileWithEmail);
-                workbookWithEmail.write(fileOutputStreamWithEmail);
-                fileOutputStreamWithEmail.close();
+            FileOutputStream fileOutputStreamNoEmail = new FileOutputStream(fileNoEmail);
+            workbookNoEmail.write(fileOutputStreamNoEmail);
+            fileOutputStreamNoEmail.close();
 
-                return "parse";
-            } catch(IOException | InterruptedException e ){
-                e.printStackTrace();
-                return "error";
-            }
+            FileOutputStream fileOutputStreamWithEmail = new FileOutputStream(fileWithEmail);
+            workbookWithEmail.write(fileOutputStreamWithEmail);
+            fileOutputStreamWithEmail.close();
+
+
+
+        return "parse";
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+            return "error";
         }
     }
+//    @RequestMapping("/parserError")
+//    public String handleError() {
+//        return "parserError";
+//    }
+
+}
+
