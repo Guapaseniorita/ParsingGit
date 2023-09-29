@@ -3,10 +3,7 @@ package com.example.parsing.controller;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.usermodel.*;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -17,11 +14,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.springframework.web.bind.annotation.RequestMapping;
+
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,26 +34,48 @@ public class ParserController {
         model.addAttribute("title", "Веб-приложение парсинга YouTube каналов");
         return "parse";
     }
+    @GetMapping("/statusParsing")
+    public String statusParsing(Model model) {
+        model.addAttribute("title", "Веб-приложение парсинга YouTube каналов");
+        return "statusParsing";
+    }
 
     @GetMapping("/parse")
     public String parseChannels() {
         try {
-            HttpClient client = HttpClient.newHttpClient();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1000&q=русскоязычные%20каналы&type=channel&regionCode=RU&relevanceLanguage=ru&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
-                    .build();
+            String nextPageToken = "";
+            JsonArray items;
+            HttpClient client;
+            File tokenFile = new File("nextPageToken.txt");
+            if (tokenFile.exists()) {
+                nextPageToken = new String(Files.readAllBytes(tokenFile.toPath()));
+            }
+            do {
+                client = HttpClient.newHttpClient();
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create("https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=русскоязычные%20каналы&type=channel&regionCode=RU&relevanceLanguage=ru&key=AIzaSyDiqx5T0kpxg-9VU5sCVyWiqb7hRAQpKks&pageToken=" + nextPageToken))
+                        .build();
 
-            HttpResponse<String> responses = client.send(request, HttpResponse.BodyHandlers.ofString());
-            String responseBody = responses.body();
+                HttpResponse<String> responses = client.send(request, HttpResponse.BodyHandlers.ofString());
+                String responseBody = responses.body();
 
-            JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
-            JsonArray items = json.getAsJsonArray("items");
+                JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
+                items = json.getAsJsonArray("items");
 
-            String currentDirectory = System.getProperty("user.dir");
-            String filePath = currentDirectory + "/src/main/java/com/example/parsing/result/";
+                if (json.has("nextPageToken")) {
+                    nextPageToken = json.get("nextPageToken").getAsString();
+                    Files.write(tokenFile.toPath(), nextPageToken.getBytes());
+                } else {
+                    break;
+                }
+            } while (true);
+            String desktopPath = System.getProperty("user.home") + "/Desktop";
+            String filePath = desktopPath + "/result/";
 
-            File fileNoEmail = new File(filePath + "noemail.xls");
-            File fileWithEmail = new File(filePath + "email.xls");
+            File resultFolder = new File(filePath);
+            resultFolder.mkdirs();
+            File fileNoEmail = new File(filePath + "/"+ "noemail.xls");
+            File fileWithEmail = new File(filePath + "/"+ "email.xls");
 
             Workbook workbookNoEmail;
             Workbook workbookWithEmail;
@@ -86,6 +108,20 @@ public class ParserController {
 
             int currentRowNoEmail = sheetNoEmail.getLastRowNum() + 1;
             int currentRowWithEmail = sheetWithEmail.getLastRowNum() + 1;
+            Set<String> existingChannels = new HashSet<>();
+            // Чтение существующих каналов из xls файлов
+            for (Row row : sheetNoEmail) {
+                Cell cell = row.getCell(0);
+                if (cell != null) {
+                    existingChannels.add(cell.getStringCellValue());
+                }
+            }
+            for (Row row : sheetWithEmail) {
+                Cell cell = row.getCell(0);
+                if (cell != null) {
+                    existingChannels.add(cell.getStringCellValue());
+                }
+            }
 
             for (JsonElement item : items) {
                 JsonObject channel = item.getAsJsonObject();
@@ -94,6 +130,11 @@ public class ParserController {
                 String channelId = channelIdElement != null ? channelIdElement.getAsString() : null;
 
                 if (channelId != null) {
+                    String channelUrl = "https://www.youtube.com/channel/" + channelId;
+                    if (existingChannels.contains(channelUrl)) {
+                        // Пропустить этот канал, так как он уже есть в xls файлах
+                        continue;
+                    }
                     HttpRequest channelRequest = HttpRequest.newBuilder()
                             .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet%2Cstatistics&id=" + channelId + "&key=AIzaSyBVtOjrEYgjVKcHmGzrg7x8OiwRtV-EQ_8"))
                             .build();
@@ -136,10 +177,10 @@ public class ParserController {
                         }
 
                     } else {
-                        System.out.println("Ошибка при получении информации о канале: " + channelId);
+                        System.out.println("Ошибка при получении каналов");
                     }
                 } else {
-                    System.out.println("Ошибка при получении channelId канала");
+                    System.out.println("Ошибка при получении каналов");
                 }
             }
 
@@ -151,18 +192,19 @@ public class ParserController {
             workbookWithEmail.write(fileOutputStreamWithEmail);
             fileOutputStreamWithEmail.close();
 
-
-
-        return "parse";
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
-            return "error";
+            return error();
         }
+        return finish();
     }
-//    @RequestMapping("/parserError")
-//    public String handleError() {
-//        return "parserError";
-//    }
-
+    @GetMapping("/error")
+    public String error() {
+        return "error";
+    }
+    @GetMapping("/finish")
+    public String finish() {
+        return "finish";
+    }
 }
 

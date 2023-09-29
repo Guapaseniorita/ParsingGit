@@ -59,6 +59,11 @@
             <artifactId>poi-ooxml-schemas</artifactId>
             <version>4.1.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.innoventsolutions.birt.runtime</groupId>
+            <artifactId>org.apache.poi_3.9.0.v201405241750</artifactId>
+            <version>5.2.3</version>
+        </dependency>
 
     </dependencies>
 
